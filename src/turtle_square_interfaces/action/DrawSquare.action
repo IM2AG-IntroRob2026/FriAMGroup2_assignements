@@ -1,0 +1,9 @@
+# Goal : client send side_length and speed
+float32 side_length
+float32 speed
+---
+# Result : server returns success true or false
+bool success
+---
+# Feedback : And he continuously sends remaining dist
+float32 remaining_distance
