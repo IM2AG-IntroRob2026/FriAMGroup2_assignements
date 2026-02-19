@@ -1,0 +1,9 @@
+# Goal
+float32 side_length
+float32 speed
+---
+# Result
+bool success
+---
+# Feedback
+float32 remaining_distance
