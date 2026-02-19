@@ -79,7 +79,7 @@ class SquareActionServer(Node):
             self.get_logger().info(f'Drawing side {side + 1}/4')
 
             # Move forward
-            if not self.move_forward(side_length, speed, feedback_msg, goal_handle):
+            if not self.move_forward(side_length, speed, feedback_msg, goal_handle, side):
                 goal_handle.abort()
                 result = DrawSquare.Result()
                 result.success = False
@@ -100,7 +100,7 @@ class SquareActionServer(Node):
         return result
 
 
-    def move_forward(self, distance, speed, feedback_msg, goal_handle):
+    def move_forward(self, distance, speed, feedback_msg, goal_handle, side):
         """Move turtle forward by distance"""
         if self.current_pose is None:
             return False
@@ -124,7 +124,7 @@ class SquareActionServer(Node):
             traveled = math.sqrt(dx**2 + dy**2)
 
             # Send feedback
-            feedback_msg.remaining_distance = (distance * 4) - traveled
+            feedback_msg.remaining_distance = distance * (4 - side) - traveled
             goal_handle.publish_feedback(feedback_msg)
 
             if traveled >= distance:
