@@ -23,7 +23,7 @@ setup(
         ],
     },
     entry_points={
-        'console_scripts':[ 
+        'console_scripts': [
             'square_action_server = turtle_square_controller.square_action_server:main',
         ],
     },

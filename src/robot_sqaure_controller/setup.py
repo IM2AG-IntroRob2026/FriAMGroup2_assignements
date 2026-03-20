@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'turtle_square_controller'
+package_name = 'robot_square_controller'
 
 setup(
     name=package_name,
@@ -23,8 +23,8 @@ setup(
         ],
     },
     entry_points={
-        'console_scripts':[ 
-            'square_action_server = turtle_square_controller.square_action_server:main',
+        'console_scripts': [
+            'square_action_server = robot_square_controller.square_action_server:main',
         ],
     },
 )
