@@ -119,8 +119,8 @@ class SquareActionServer(Node):
             return False
 
         # Record start position
-        start_x = self.current_pose.x
-        start_y = self.current_pose.y
+        start_x = self.current_pose.position.x
+        start_y = self.current_pose.position.y
 
         twist = Twist()
         twist.linear.x = speed
@@ -132,8 +132,8 @@ class SquareActionServer(Node):
                 return False
 
             # Calculate distance traveled
-            dx = self.current_pose.x - start_x
-            dy = self.current_pose.y - start_y
+            dx = self.current_pose.position.x - start_x
+            dy = self.current_pose.position.y - start_y
             traveled = math.sqrt(dx**2 + dy**2)
 
             # Send feedback
@@ -150,6 +150,13 @@ class SquareActionServer(Node):
         return True
 
 
+    def get_yaw(self):
+        """Extract yaw from current_pose quaternion"""
+        q = self.current_pose.orientation
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        return math.atan2(siny_cosp, cosy_cosp)
+
     def rotate(self, angle_degrees, goal_handle):
         """Rotate turtle by angle in degrees"""
         if self.current_pose is None:
@@ -157,7 +164,7 @@ class SquareActionServer(Node):
 
         # Compute exact target angle
         target_theta = self.normalize_angle(
-            self.current_pose.theta + angle_degrees * math.pi / 180.0
+            self.get_yaw() + angle_degrees * math.pi / 180.0
         )
 
         twist = Twist()
@@ -168,7 +175,7 @@ class SquareActionServer(Node):
                 return False
 
             # self-corrects if overshoot
-            error = self.normalize_angle(target_theta - self.current_pose.theta)
+            error = self.normalize_angle(target_theta - self.get_yaw())
 
             if abs(error) < 0.005:  # ~0.3 degrees
                 break

@@ -1,0 +1,36 @@
+name: CD - Docs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**/*.md'
+      - '.github/workflows/cd-docs.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy-docs:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect README files
+        run: |
+          mkdir -p _site
+          cp README.md _site/index.md
+          mkdir -p _site/turtle_square_controller
+          cp src/turtle_square_controller/README.md _site/turtle_square_controller/index.md
+          mkdir -p _site/robot_square_controller
+          cp src/robot_sqaure_controller/README.md _site/robot_square_controller/index.md
+          mkdir -p _site/troubleshooting
+          cp TROUBLESHOOTING.md _site/troubleshooting/index.md
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./_site
+          enable_jekyll: true

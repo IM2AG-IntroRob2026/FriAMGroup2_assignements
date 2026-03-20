@@ -1,1 +1,0 @@
-# FriAMGroup2_assignements
