@@ -18,10 +18,27 @@ jobs:
         with:
           required-ros-distributions: humble
 
-      - uses: ros-tooling/action-ros-ci@v0.3
-        with:
-          package-name: |
-            turtle_square_interfaces
-            turtle_square_controller
+      - name: Install dependencies
+        run: |
+          source /opt/ros/humble/setup.bash
+          sudo apt-get update
+          rosdep update
+          rosdep install --from-paths src --ignore-src -r -y
+
+      - name: Build
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build --packages-select \
+            turtle_square_interfaces \
+            turtle_square_controller \
             robot_square_controller
-          target-ros2-distro: humble
+
+      - name: Test
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          colcon test --packages-select \
+            turtle_square_interfaces \
+            turtle_square_controller \
+            robot_square_controller
+          colcon test-result --verbose
