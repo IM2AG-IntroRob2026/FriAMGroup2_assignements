@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
+import math
+import time
+
 import rclpy
+from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 from rclpy.action import ActionServer, CancelResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-from geometry_msgs.msg import Twist 
-from geometry_msgs.msg import Pose 
-from nav_msgs.msg import Odometry
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from turtle_square_interfaces.action import DrawSquare
-import math
-import time
 
 
 class SquareActionServer(Node):
+
     def __init__(self):
         super().__init__('square_action_server')
 
@@ -27,16 +28,18 @@ class SquareActionServer(Node):
         self.declare_parameter('side_length', 2.0)
         self.declare_parameter('speed', 1.0)
 
-        # ReentrantCallbackGroup allows pose_callback to run concurrently
+        # ReentrantCallbackGroup allows odom_callback to run concurrently
         # with the action execute_callback
         self.cb_group = ReentrantCallbackGroup()
 
         # Publisher and Subscriber
         self.cmd_pub = self.create_publisher(Twist, '/Robot2/cmd_vel', 10)
-        self.pose_sub = self.create_subscription(Odometry, '/Robot2/odom',
-                                                  self.odom_callback,
-                                                  qos_profile,
-                                                  callback_group=self.cb_group)
+        self.pose_sub = self.create_subscription(
+            Odometry,
+            '/Robot2/odom',
+            self.odom_callback,
+            qos_profile,
+            callback_group=self.cb_group)
 
         # Current pose
         self.current_pose = None
@@ -52,29 +55,32 @@ class SquareActionServer(Node):
 
         self.get_logger().info('Square Action Server started!')
 
-    
     def cancel_callback(self, goal_handle):
-        """Accept cancel requests"""
+        """Accept cancel requests."""
         self.get_logger().info('Received cancel request')
         return CancelResponse.ACCEPT
 
-
     def odom_callback(self, msg):
-        """Store current turtle position"""
+        """Store current robot position."""
         self.current_pose = msg.pose.pose
-        self.get_logger().info(f'Position: x={self.current_pose.position.x:.2f}, y={self.current_pose.position.y:.2f}, z={self.current_pose.position.z:.2f}')
-        self.get_logger().info(f'Orientation: x={self.current_pose.orientation.x:.2f}, y={self.current_pose.orientation.y:.2f}, z={self.current_pose.orientation.z:.2f}, w={self.current_pose.orientation.w:.2f}') 
-
+        pos = self.current_pose.position
+        ori = self.current_pose.orientation
+        self.get_logger().info(
+            f'Position: x={pos.x:.2f}, y={pos.y:.2f}, z={pos.z:.2f}')
+        self.get_logger().info(
+            f'Orientation: x={ori.x:.2f}, y={ori.y:.2f}, '
+            f'z={ori.z:.2f}, w={ori.w:.2f}')
 
     def execute_callback(self, goal_handle):
-        """Execute the square drawing action"""
+        """Execute the square drawing action."""
         self.get_logger().info('Executing goal...')
 
         # Get parameters (goal overrides defaults)
-        side_length = goal_handle.request.side_length if goal_handle.request.side_length > 0 \
-                      else self.get_parameter('side_length').value
-        speed = goal_handle.request.speed if goal_handle.request.speed > 0 \
-                else self.get_parameter('speed').value
+        req = goal_handle.request
+        side_length = (req.side_length if req.side_length > 0
+                       else self.get_parameter('side_length').value)
+        speed = (req.speed if req.speed > 0
+                 else self.get_parameter('speed').value)
 
         feedback_msg = DrawSquare.Feedback()
 
@@ -112,9 +118,8 @@ class SquareActionServer(Node):
         result.success = True
         return result
 
-
     def move_forward(self, distance, speed, feedback_msg, goal_handle, side):
-        """Move turtle forward by distance"""
+        """Move robot forward by distance."""
         if self.current_pose is None:
             return False
 
@@ -149,16 +154,15 @@ class SquareActionServer(Node):
         self.stop()
         return True
 
-
     def get_yaw(self):
-        """Extract yaw from current_pose quaternion"""
+        """Extract yaw from current_pose quaternion."""
         q = self.current_pose.orientation
         siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
         cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         return math.atan2(siny_cosp, cosy_cosp)
 
     def rotate(self, angle_degrees, goal_handle):
-        """Rotate turtle by angle in degrees"""
+        """Rotate robot by angle in degrees."""
         if self.current_pose is None:
             return False
 
@@ -183,7 +187,7 @@ class SquareActionServer(Node):
             # Proportional control: direction auto-corrects via sign of error
             speed = max(0.2, min(2.0, abs(error) * 3.0))
             if error > 0:
-                twist.angular.z = speed 
+                twist.angular.z = speed
             else:
                 twist.angular.z = -speed
             self.cmd_pub.publish(twist)
@@ -192,17 +196,15 @@ class SquareActionServer(Node):
         self.stop()
         return True
 
-
-
     def stop(self):
-        """Stop the turtle"""
+        """Stop the robot."""
         twist = Twist()
         self.cmd_pub.publish(twist)
         time.sleep(0.1)
 
     @staticmethod
     def normalize_angle(angle):
-        """Normalize angle to [-pi, pi]"""
+        """Normalize angle to [-pi, pi]."""
         while angle > math.pi:
             angle -= 2 * math.pi
         while angle < -math.pi:
@@ -222,4 +224,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-
