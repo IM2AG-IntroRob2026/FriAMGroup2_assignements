@@ -28,6 +28,8 @@ setup(
     entry_points={
         'console_scripts': [
             'fsm_node = turtle_fsm.fsm_node:main',
+            'draw_boundaries = turtle_fsm.draw_boundaries_node:main',
+            'keyboard_node = turtle_fsm.keyboard_node:main',
         ],
     },
 
