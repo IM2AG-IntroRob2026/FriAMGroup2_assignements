@@ -31,7 +31,8 @@ jobs:
           colcon build --packages-select \
             turtle_square_interfaces \
             turtle_square_controller \
-            robot_square_controller
+            robot_square_controller \
+            turtle_fsm
 
       - name: Test
         run: |
@@ -40,5 +41,6 @@ jobs:
           colcon test --packages-select \
             turtle_square_interfaces \
             turtle_square_controller \
-            robot_square_controller
+            robot_square_controller \
+            turtle_fsm
           colcon test-result --verbose
