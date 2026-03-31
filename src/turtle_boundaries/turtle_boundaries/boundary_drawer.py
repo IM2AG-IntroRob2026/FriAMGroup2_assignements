@@ -1,11 +1,12 @@
-import rclpy
-from rclpy.node import Node
-from geometry_msgs.msg import Twist
-from turtlesim.msg import Pose
-from turtlesim.srv import TeleportAbsolute, SetPen
-from std_msgs.msg import Bool
 import math
 
+from geometry_msgs.msg import Twist
+from rclpy.node import Node
+from std_msgs.msg import Bool
+from turtlesim.msg import Pose
+from turtlesim.srv import SetPen, TeleportAbsolute
+
+import rclpy
 
 
 DOMAIN_MIN = 1.0
@@ -17,10 +18,10 @@ WALL_THRESHOLD = 0.5
 
 
 ALL_CORNERS = [
-    (DOMAIN_MIN, DOMAIN_MIN),   
-    (DOMAIN_MAX, DOMAIN_MIN),   
-    (DOMAIN_MAX, DOMAIN_MAX),   
-    (DOMAIN_MIN, DOMAIN_MAX),  
+    (DOMAIN_MIN, DOMAIN_MIN),
+    (DOMAIN_MAX, DOMAIN_MIN),
+    (DOMAIN_MAX, DOMAIN_MAX),
+    (DOMAIN_MIN, DOMAIN_MAX),
 ]
 
 
@@ -29,7 +30,6 @@ class BoundaryDrawer(Node):
     def __init__(self):
         super().__init__('boundary_drawer')
 
-     
         self.declare_parameter('pen_color_r', 255)
         self.declare_parameter('pen_color_g', 0)
         self.declare_parameter('pen_color_b', 0)
@@ -57,23 +57,21 @@ class BoundaryDrawer(Node):
             TeleportAbsolute, '/turtle1/teleport_absolute')
         self.pen_client = self.create_client(SetPen, '/turtle1/set_pen')
 
-      
-        self.pose= None
+        self.pose = None
         self.state = 'INIT'
         self.manual_mode = False
         self.pre_manual_state = 'EXPLORING'
         self.start_pose = None
 
         # These are built when wall is first hit
-        self.visit_list  = []   
-        self.visit_index = 0  
+        self.visit_list = []
+        self.visit_index = 0
 
-      
         self.timer = self.create_timer(0.05, self._control_loop)
 
         self.get_logger().info('BoundaryDrawer started. Waiting for pose...')
 
-    #CALLBACKS 
+    # CALLBACKS
     def _pose_callback(self, msg: Pose):
         self.pose = msg
         if self.state == 'INIT':
@@ -95,7 +93,7 @@ class BoundaryDrawer(Node):
             self.state = self.pre_manual_state
             self.get_logger().info(f'Resuming autonomous (state={self.state})')
 
-    #MAIN CONTROL LOOP 
+    # MAIN CONTROL LOOP
 
     def _control_loop(self):
         if self.pose is None:
@@ -114,7 +112,7 @@ class BoundaryDrawer(Node):
         elif self.state == 'DONE':
             self._stop_turtle()
 
-    #STATE BEHAVIORS 
+    # STATE BEHAVIORS
 
     def _do_exploring(self):
         p = self.pose
@@ -133,12 +131,12 @@ class BoundaryDrawer(Node):
             # build a visit list
             # wrapping around,then back to the start corner to close the square
             self.visit_list = []
-            for i in range(5):  
+            for i in range(5):
                 idx = (start_idx + i) % 4
                 self.visit_list.append(ALL_CORNERS[idx])
 
             self.visit_index = 0
-            self._set_pen(up=False)   
+            self._set_pen(up=False)
             self.state = 'FOLLOWING'
             self.get_logger().info(
                 f'Wall hit! Pen down. Starting from corner {start_idx}.')
@@ -167,16 +165,16 @@ class BoundaryDrawer(Node):
             self.state = 'DONE'
             self.get_logger().info('Done, Turtle is back at start.')
 
-    # HELPERS 
+    # HELPERS
 
     def _nearest_corner_idx(self, x: float, y: float) -> int:
-        best_idx  = 0
+        best_idx = 0
         best_dist = float('inf')
         for i, (cx, cy) in enumerate(ALL_CORNERS):
             d = math.hypot(cx - x, cy - y)
             if d < best_dist:
                 best_dist = d
-                best_idx  = i
+                best_idx = i
         return best_idx
 
     def _drive_toward(self, tx: float, ty: float) -> bool:
@@ -190,8 +188,8 @@ class BoundaryDrawer(Node):
             return True
 
         target_angle = math.atan2(dy, dx)
-        angle_error  = self._normalize_angle(target_angle - p.theta)
-        angular      = min(TURN_SPEED, max(-TURN_SPEED, 2.5 * angle_error))
+        angle_error = self._normalize_angle(target_angle - p.theta)
+        angular = min(TURN_SPEED, max(-TURN_SPEED, 2.5 * angle_error))
 
         if dist < 1.0:
             linear = MOVE_SPEED * 0.3
@@ -205,32 +203,34 @@ class BoundaryDrawer(Node):
 
     @staticmethod
     def _normalize_angle(angle: float) -> float:
-        while angle >  math.pi: angle -= 2 * math.pi
-        while angle < -math.pi: angle += 2 * math.pi
+        while angle > math.pi:
+            angle -= 2 * math.pi
+        while angle < -math.pi:
+            angle += 2 * math.pi
         return angle
 
     def _publish_vel(self, linear: float, angular: float):
         msg = Twist()
-        msg.linear.x  = linear
+        msg.linear.x = linear
         msg.angular.z = angular
         self.vel_pub.publish(msg)
 
     def _stop_turtle(self):
         self._publish_vel(0.0, 0.0)
 
-    #SERVICE CALLS
+    # SERVICE CALLS
 
     def _set_pen(self, up: bool):
         if not self.pen_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('set_pen service not available')
             return
 
-        req       = SetPen.Request()
-        req.r     = self.pen_color[0]
-        req.g     = self.pen_color[1]
-        req.b     = self.pen_color[2]
+        req = SetPen.Request()
+        req.r = self.pen_color[0]
+        req.g = self.pen_color[1]
+        req.b = self.pen_color[2]
         req.width = self.pen_width
-        req.off   = 1 if up else 0
+        req.off = 1 if up else 0
 
         self.pen_client.call_async(req)
 

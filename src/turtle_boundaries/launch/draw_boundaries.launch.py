@@ -3,6 +3,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+
 def generate_launch_description():
 
     pen_r_arg = DeclareLaunchArgument('pen_color_r', default_value='255')
@@ -26,7 +27,7 @@ def generate_launch_description():
             'pen_color_r': LaunchConfiguration('pen_color_r'),
             'pen_color_g': LaunchConfiguration('pen_color_g'),
             'pen_color_b': LaunchConfiguration('pen_color_b'),
-            'pen_width':   LaunchConfiguration('pen_width'),
+            'pen_width': LaunchConfiguration('pen_width'),
         }],
     )
 

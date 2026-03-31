@@ -1,22 +1,24 @@
-import sys
-import tty
-import termios
 import select
+import sys
+import termios
 import threading
-import rclpy
-from rclpy.node import Node
+import tty
+
 from geometry_msgs.msg import Twist
+from rclpy.node import Node
 from std_msgs.msg import Bool
+
+import rclpy
 
 
 TELEOP_LINEAR = 2.0
 TELEOP_ANGULAR = 1.5
 
-KEY_UP     = '\x1b[A'
-KEY_DOWN   = '\x1b[B'
-KEY_LEFT   = '\x1b[D'
-KEY_RIGHT  = '\x1b[C'
-KEY_SPACE  = ' '
+KEY_UP = '\x1b[A'
+KEY_DOWN = '\x1b[B'
+KEY_LEFT = '\x1b[D'
+KEY_RIGHT = '\x1b[C'
+KEY_SPACE = ' '
 KEY_CTRL_C = '\x03'
 
 
