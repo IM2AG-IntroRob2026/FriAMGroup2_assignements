@@ -40,5 +40,6 @@ jobs:
           colcon test --packages-select \
             turtle_square_interfaces \
             turtle_square_controller \
-            robot_square_controller
+            robot_square_controller \
+            turtle_boundaries
           colcon test-result --verbose
