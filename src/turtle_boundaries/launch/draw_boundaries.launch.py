@@ -30,6 +30,15 @@ def generate_launch_description():
         }],
     )
 
+    teleop_handler_node = Node(
+        package='turtle_boundaries',
+        executable='teleop_handler',
+        name='teleop_handler',
+        output='screen',
+        # Open in a separate terminal so the user can type keys
+        prefix='xterm -e',
+    )
+
     return LaunchDescription([
         pen_r_arg,
         pen_g_arg,
@@ -37,4 +46,5 @@ def generate_launch_description():
         pen_width_arg,
         turtlesim_node,
         boundary_drawer_node,
+        teleop_handler_node,
     ])
