@@ -31,7 +31,8 @@ jobs:
           colcon build --packages-select \
             turtle_square_interfaces \
             turtle_square_controller \
-            robot_square_controller
+            robot_square_controller \
+            boundary_controller
 
       - name: Test
         run: |
