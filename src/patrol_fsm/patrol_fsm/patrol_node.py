@@ -5,11 +5,14 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 from std_srvs.srv import Trigger
 import rclpy.duration
 
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+
 from irobot_create_msgs.action import AudioNoteSequence, Dock, Undock
-from irobot_create_msgs.msg import AudioNote, HazardDetectionVector
+from irobot_create_msgs.msg import AudioNote, HazardDetection, HazardDetectionVector
 from turtle_square_interfaces.action import DrawSquare
 
 from patrol_fsm.fsm_states import PatrolFSM, PatrolState
@@ -58,12 +61,28 @@ class PatrolNode(Node):
         # Bump side stored at hazard detection time
         self._bump_side = 'CENTER'
 
-        # Hazard subscriber
+        # Current odometry pose (updated by odom subscriber, used by avoidance)
+        self.current_pose = None
+
+        # Shared BEST_EFFORT QoS for all Create3 sensor topics
+        _sensor_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
         self.create_subscription(
             HazardDetectionVector,
             '/Robot2/hazard_detection',
             self._hazard_cb,
-            10,
+            _sensor_qos,
+            callback_group=self.cb_group,
+        )
+        self.create_subscription(
+            Odometry,
+            '/Robot2/odom',
+            lambda msg: setattr(self, 'current_pose', msg.pose.pose),
+            _sensor_qos,
             callback_group=self.cb_group,
         )
 
@@ -113,8 +132,7 @@ class PatrolNode(Node):
 
         # Look for any BUMP-type detection
         for detection in msg.detections:
-            # HazardDetection.type == 1 is BUMP in irobot_create_msgs
-            if detection.type == 1:
+            if detection.type == HazardDetection.BUMP:
                 # Determine bump side from sensor header frame_id
                 # frame_id examples: "bump_left", "bump_right", "bump_front_center"
                 frame = detection.header.frame_id.lower()
