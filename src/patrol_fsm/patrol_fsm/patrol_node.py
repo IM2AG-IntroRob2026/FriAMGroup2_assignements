@@ -302,6 +302,7 @@ class PatrolNode(Node):
             node=self,
             bump_side=self._bump_side,
             done_callback=self._avoidance_done_cb,
+            callback_group=self.cb_group,
         )
         maneuver.start()
 
