@@ -1,3 +1,5 @@
+import math
+
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -20,28 +22,37 @@ from patrol_fsm.avoidance import AvoidanceManeuver
 from patrol_fsm.siren import build_siren_goal
 
 
+def _get_yaw(pose) -> float:
+    q = pose.orientation
+    return math.atan2(
+        2.0 * (q.w * q.z + q.x * q.y),
+        1.0 - 2.0 * (q.y * q.y + q.z * q.z),
+    )
+
+
+def _normalize_angle(a: float) -> float:
+    while a >  math.pi: a -= 2.0 * math.pi
+    while a < -math.pi: a += 2.0 * math.pi
+    return a
+
+
 class PatrolNode(Node):
 
     def __init__(self):
         super().__init__('patrol_node')
 
-        # Parameters
         self.declare_parameter('num_laps', 3)
         self.declare_parameter('side_length', 2.0)
         self.declare_parameter('patrol_speed', 0.3)
         self.declare_parameter('siren_duration', 3.0)
 
-        # FSM
         num_laps = self.get_parameter('num_laps').value
         self.fsm = PatrolFSM(num_laps=num_laps)
 
-        # Shared callback group for all action clients + subscribers
         self.cb_group = ReentrantCallbackGroup()
 
-        # Publishers
         self.cmd_pub = self.create_publisher(Twist, '/Robot2/cmd_vel', 10)
 
-        # Action clients
         self._undock_client = ActionClient(
             self, Undock, '/Robot2/undock', callback_group=self.cb_group)
         self._dock_client = ActionClient(
@@ -52,19 +63,23 @@ class PatrolNode(Node):
             self, AudioNoteSequence, '/Robot2/audio_note_sequence',
             callback_group=self.cb_group)
 
-        # Guards to prevent re-sending goals
-        self._undock_sent = False
-        self._dock_sent = False
-        self._patrol_sent = False
+        self._undock_sent        = False
+        self._dock_sent          = False
+        self._patrol_sent        = False
         self._patrol_goal_handle = None
 
-        # Bump side stored at hazard detection time
-        self._bump_side = 'CENTER'
+        self._bump_side           = 'CENTER'
+        self._heading_at_bump     = None
 
-        # Current odometry pose (updated by odom subscriber, used by avoidance)
+        # Saved at each lap start; robot returns here after avoidance so the
+        # patrol square is always drawn from the same origin.
+        self._lap_start_pose         = None
+        self._returning_to_lap_start = False
+        self._aligning_for_patrol    = False
+        self._align_target_yaw       = None
+
         self.current_pose = None
 
-        # Shared BEST_EFFORT QoS for all Create3 sensor topics
         _sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
@@ -86,7 +101,6 @@ class PatrolNode(Node):
             callback_group=self.cb_group,
         )
 
-        # Services
         self.start_srv = self.create_service(
             Trigger, '/patrol/start', self._handle_start,
             callback_group=self.cb_group)
@@ -94,7 +108,6 @@ class PatrolNode(Node):
             Trigger, '/patrol/stop', self._handle_stop,
             callback_group=self.cb_group)
 
-        # 10 Hz state-logging timer
         self.create_timer(0.1, self._timer_cb)
 
         self.get_logger().info('PatrolNode started. State: DOCKED')
@@ -130,11 +143,9 @@ class PatrolNode(Node):
         if self.fsm.state != PatrolState.PATROLLING:
             return
 
-        # Look for any BUMP-type detection
         for detection in msg.detections:
             if detection.type == HazardDetection.BUMP:
-                # Determine bump side from sensor header frame_id
-                # frame_id examples: "bump_left", "bump_right", "bump_front_center"
+                # frame_id: "bump_left" | "bump_right" | "bump_front_center"
                 frame = detection.header.frame_id.lower()
                 if 'left' in frame:
                     self._bump_side = 'LEFT'
@@ -143,7 +154,14 @@ class PatrolNode(Node):
                 else:
                     self._bump_side = 'CENTER'
 
+                self._heading_at_bump = (
+                    _get_yaw(self.current_pose)
+                    if self.current_pose is not None else None
+                )
                 self.get_logger().info(
+                    f'[HAZARD] BUMP detected — side: {self._bump_side} '
+                    f'heading={math.degrees(self._heading_at_bump):.1f}°'
+                    if self._heading_at_bump is not None else
                     f'[HAZARD] BUMP detected — side: {self._bump_side}')
                 self._cancel_patrol()
                 self.fsm.on_hazard()
@@ -199,12 +217,18 @@ class PatrolNode(Node):
         if not self._draw_square_client.server_is_ready():
             self.get_logger().warn('/draw_square server not ready yet — retrying next tick')
             return
-        side_length = self.get_parameter('side_length').value
+        if self.current_pose is not None:
+            self._lap_start_pose = self.current_pose
+            p = self._lap_start_pose.position
+            self.get_logger().info(
+                f'[PATROL] Lap start saved x={p.x:.2f} y={p.y:.2f} '
+                f'heading={math.degrees(_get_yaw(self._lap_start_pose)):.1f}°')
+        side_length  = self.get_parameter('side_length').value
         patrol_speed = self.get_parameter('patrol_speed').value
 
         goal = DrawSquare.Goal()
         goal.side_length = float(side_length)
-        goal.speed = float(patrol_speed)
+        goal.speed       = float(patrol_speed)
 
         self._patrol_sent = True
         self.get_logger().info(
@@ -232,7 +256,7 @@ class PatrolNode(Node):
         )
 
     def _patrol_result_cb(self, future):
-        self._patrol_sent = False
+        self._patrol_sent        = False
         self._patrol_goal_handle = None
 
         if self.fsm.state != PatrolState.PATROLLING:
@@ -303,6 +327,7 @@ class PatrolNode(Node):
             bump_side=self._bump_side,
             done_callback=self._avoidance_done_cb,
             callback_group=self.cb_group,
+            original_heading=self._heading_at_bump,
         )
         maneuver.start()
 
@@ -311,13 +336,99 @@ class PatrolNode(Node):
             return
         self.fsm.on_avoidance_done()
         self.get_logger().info(f'Avoidance done → state: {self.fsm.state.name}')
-        self._enter_patrolling()
+        self._return_to_lap_start()
 
-    # ── RETURNING placeholder (Step 8) ────────────────────────────────────────
+    # ── Return-to-lap-start ───────────────────────────────────────────────────
+
+    def _return_to_lap_start(self):
+        if self._lap_start_pose is None or self.current_pose is None:
+            self.get_logger().info('[RETURN-TO-START] No start pose — patrolling from current pos')
+            self._enter_patrolling()
+            return
+        pos  = self.current_pose.position
+        tgt  = self._lap_start_pose.position
+        dist = math.sqrt((pos.x - tgt.x) ** 2 + (pos.y - tgt.y) ** 2)
+        if dist < 0.15:
+            self.get_logger().info(
+                f'[RETURN-TO-START] Already close ({dist:.2f}m) — patrolling')
+            self._enter_patrolling()
+            return
+        self.get_logger().info(
+            f'[RETURN-TO-START] Returning {dist:.2f}m to lap start '
+            f'x={tgt.x:.2f} y={tgt.y:.2f}')
+        self._returning_to_lap_start = True
+        # Timer is never cancelled from within its callback (rclpy Iron constraint)
+        self.create_timer(0.05, self._tick_return_to_lap_start,
+                          callback_group=self.cb_group)
+
+    def _tick_return_to_lap_start(self):
+        if not self._returning_to_lap_start:
+            return
+        if self.current_pose is None or self._lap_start_pose is None:
+            return
+        pos  = self.current_pose.position
+        tgt  = self._lap_start_pose.position
+        dist = math.sqrt((pos.x - tgt.x) ** 2 + (pos.y - tgt.y) ** 2)
+        if dist < 0.15:
+            self._returning_to_lap_start = False
+            self.cmd_pub.publish(Twist())
+            self.get_logger().info(
+                f'[RETURN-TO-START] Arrived (dist={dist:.2f}m) — aligning heading')
+            self._start_align_for_patrol()
+            return
+        target_heading  = math.atan2(tgt.y - pos.y, tgt.x - pos.x)
+        current_heading = _get_yaw(self.current_pose)
+        heading_error   = _normalize_angle(target_heading - current_heading)
+        speed = max(0.15, min(0.30, dist * 0.5))
+        twist = Twist()
+        if abs(heading_error) > 0.3:
+            twist.angular.z = math.copysign(0.5, heading_error)
+        else:
+            twist.linear.x  = speed
+            twist.angular.z = heading_error * 1.5
+        self.cmd_pub.publish(twist)
+
+    def _start_align_for_patrol(self):
+        if self._lap_start_pose is None or self.current_pose is None:
+            self._enter_patrolling()
+            return
+        target_yaw  = _get_yaw(self._lap_start_pose)
+        current_yaw = _get_yaw(self.current_pose)
+        error = _normalize_angle(target_yaw - current_yaw)
+        if abs(error) < 0.1:
+            self.get_logger().info('[RETURN-TO-START] Already aligned — patrolling')
+            self._enter_patrolling()
+            return
+        self._align_target_yaw    = target_yaw
+        self._aligning_for_patrol = True
+        self.get_logger().info(
+            f'[RETURN-TO-START] Aligning to lap-start heading '
+            f'{math.degrees(target_yaw):.1f}° (cur={math.degrees(current_yaw):.1f}°)')
+        self.create_timer(0.05, self._tick_align_for_patrol,
+                          callback_group=self.cb_group)
+
+    def _tick_align_for_patrol(self):
+        if not self._aligning_for_patrol:
+            return
+        if self.current_pose is None:
+            return
+        current_yaw = _get_yaw(self.current_pose)
+        error = _normalize_angle(self._align_target_yaw - current_yaw)
+        if abs(error) < 0.08:
+            self._aligning_for_patrol = False
+            self.cmd_pub.publish(Twist())
+            self.get_logger().info(
+                f'[RETURN-TO-START] Aligned (yaw={math.degrees(current_yaw):.1f}°) — patrolling')
+            self._enter_patrolling()
+            return
+        twist = Twist()
+        twist.angular.z = math.copysign(max(0.3, min(0.6, abs(error) * 2.0)), error)
+        self.cmd_pub.publish(twist)
+
+    # ── RETURNING ─────────────────────────────────────────────────────────────
 
     def _enter_returning(self):
-        self.get_logger().info(
-            '[RETURNING] — navigation toward dock implemented in Step 8')
+        self.get_logger().info('[RETURNING] — navigation toward dock not yet implemented')
 
     # ── DOCKING ────────────────────────────────────────────────────────────────
 
@@ -356,7 +467,8 @@ class PatrolNode(Node):
         state = self.fsm.state
         if state == PatrolState.UNDOCKING and not self._undock_sent:
             self._enter_undocking()
-        elif state == PatrolState.PATROLLING and not self._patrol_sent:
+        elif (state == PatrolState.PATROLLING and not self._patrol_sent
+              and not self._returning_to_lap_start and not self._aligning_for_patrol):
             self._enter_patrolling()
         elif state == PatrolState.DOCKING and not self._dock_sent:
             self._enter_docking()
