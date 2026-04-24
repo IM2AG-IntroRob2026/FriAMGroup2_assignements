@@ -128,6 +128,8 @@ class PatrolNode(Node):
         return response
 
     def _handle_stop(self, request, response):
+        self._returning_to_lap_start = False
+        self._aligning_for_patrol    = False
         self.fsm.on_stop_service()
         self.cmd_pub.publish(Twist())
         self._cancel_patrol()
@@ -428,7 +430,12 @@ class PatrolNode(Node):
     # ── RETURNING ─────────────────────────────────────────────────────────────
 
     def _enter_returning(self):
-        self.get_logger().info('[RETURNING] — navigation toward dock not yet implemented')
+        if self.fsm.state != PatrolState.RETURNING:
+            return
+        self.get_logger().info('[RETURNING] All laps done — heading to dock')
+        self.fsm.on_near_dock()
+        self.get_logger().info(f'State → {self.fsm.state.name}')
+        self._enter_docking()
 
     # ── DOCKING ────────────────────────────────────────────────────────────────
 
@@ -470,6 +477,8 @@ class PatrolNode(Node):
         elif (state == PatrolState.PATROLLING and not self._patrol_sent
               and not self._returning_to_lap_start and not self._aligning_for_patrol):
             self._enter_patrolling()
+        elif state == PatrolState.RETURNING:
+            self._enter_returning()
         elif state == PatrolState.DOCKING and not self._dock_sent:
             self._enter_docking()
 
